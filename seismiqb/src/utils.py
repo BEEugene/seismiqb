@@ -249,19 +249,16 @@ def _filter_labels(labels, zero_matrix, ilines_offset, xlines_offset):
             if key in labels: # for some reason that is necessary
                 labels.pop(key)
 
-
 @njit
 def create_mask(ilines_, xlines_, hs_,
                 il_xl_h, ilines_offset, xlines_offset, geom_depth,
-                mode, width, single_horizon=False):
+                mode, width, n_horizons=-1):
     """ Jit-accelerated function for fast mask creation from point cloud data stored in numba.typed.Dict.
     This function is usually called inside SeismicCropBatch's method `load_masks`.
     """
     #pylint: disable=line-too-long, too-many-nested-blocks, too-many-branches
     mask = np.zeros((len(ilines_), len(xlines_), len(hs_)))
-    if single_horizon:
-        single_idx = -1
-
+    selected_idx = False
     for i, iline_ in enumerate(ilines_):
         for j, xline_ in enumerate(xlines_):
             il_, xl_ = iline_ + ilines_offset, xline_ + xlines_offset
@@ -269,21 +266,23 @@ def create_mask(ilines_, xlines_, hs_,
                 continue
             m_temp = np.zeros(geom_depth)
             if mode == 'horizon':
-                filtered_idx = [idx for idx, height_ in enumerate(il_xl_h[(il_, xl_)])
-                                if height_ != FILL_VALUE]
-                filtered_idx = [idx for idx in filtered_idx
-                                if il_xl_h[(il_, xl_)][idx] > hs_[0] and il_xl_h[(il_, xl_)][idx] < hs_[-1]]
-                if len(filtered_idx) == 0:
-                    continue
-                if single_horizon:
-                    if single_idx == -1:
-                        single_idx = np.random.choice(filtered_idx)
-                        single_idx = filtered_idx[np.random.randint(len(filtered_idx))]
-                    value = il_xl_h[(il_, xl_)][single_idx]
-                    m_temp[max(0, value - width):min(value + width, geom_depth)] = 1
-                else:
-                    for idx in filtered_idx:
-                        m_temp[max(0, il_xl_h[(il_, xl_)][idx] - width):min(il_xl_h[(il_, xl_)][idx] + width, geom_depth)] = 1
+                heights = il_xl_h[(il_, xl_)]
+                if not selected_idx:
+                    filtered_idx = np.array([idx for idx, height_ in enumerate(heights)
+                                             if height_ != FILL_VALUE])
+                    filtered_idx = np.array([idx for idx in filtered_idx
+                                             if heights[idx] > hs_[0] and heights[idx] < hs_[-1]])
+                    if len(filtered_idx) == 0:
+                        continue
+                    if n_horizons != -1 and len(filtered_idx) >= n_horizons:
+                        filtered_idx = np.random.choice(filtered_idx, replace=False, size=n_horizons)
+                        selected_idx = True
+                for idx in filtered_idx:
+                    _height = heights[idx]
+                    if width == 0:
+                        m_temp[_height] = 1
+                    else:
+                        m_temp[max(0, _height - width):min(_height + width, geom_depth)] = 1
             elif mode == 'stratum':
                 current_col = 1
                 start = 0
@@ -513,7 +512,6 @@ def round_to_array(values, ticks):
                 values[i] = ticks_[ix-1]
     return values
 
-
 @njit
 def update_minmax(array, val_min, val_max, matrix, il, xl, ilines_offset, xlines_offset):
     """ Get both min and max values in just one pass through array.
@@ -536,7 +534,6 @@ def update_minmax(array, val_min, val_max, matrix, il, xl, ilines_offset, xlines
         val_max = maximum
 
     return val_min, val_max, matrix
-
 
 
 def labels_to_depth_map(labels, geom, labels_idx=0, offset=0):
@@ -714,3 +711,70 @@ def compute_corrs(data):
             if c != 0:
                 corrs[i, x] = s / c
     return corrs
+
+
+def convert_to_numba_dict(_labels):
+    """ Convert a dict to Numba dict.
+
+    Parameters
+    ----------
+    _labels : dict
+        Designed for a dict with special format
+        keys must be tuples of length 2 with int64 values;
+        dict's values must be arrays.
+
+    Returns
+    -------
+    A Numba dict.
+    """
+    key_type = types.Tuple((types.int64, types.int64))
+    value_type = types.int64[:]
+    _type_labels = Dict.empty(key_type, value_type)
+    for key, value in _labels.items():
+        _type_labels[key] = np.asarray(np.rint(value), dtype=np.int64)
+    return _type_labels
+
+def update_horizon_dict(first, second):
+    """ Left merge two dicts. """
+    for k, v in second.items():
+        if not k in first:
+            first.update({k: v})
+    return first
+
+def make_grid_info(grid_array, cube_name, crop_shape):
+    """ Create grid info based on the grid array with lower left coordinates of the crops. """
+    grid_array = np.array(grid_array)
+    offsets = np.array([min(grid_array[:, 0]),
+                        min(grid_array[:, 1]),
+                        min(grid_array[:, 2])])
+    grid_array = grid_array[:, :].astype(int) - offsets
+
+    # this is not ilines/xlines coords
+    ilines_range = [np.min(grid_array[:, 0]), np.max(grid_array[:, 0]) + 1]
+    xlines_range = [np.min(grid_array[:, 1]), np.max(grid_array[:, 1]) + crop_shape[1]]
+    h_range = [np.min(grid_array[:, 2]), np.max(grid_array[:, 2]) + crop_shape[2]]
+    predict_shape = (ilines_range[1] - ilines_range[0],
+                     xlines_range[1] - xlines_range[0],
+                     h_range[1] - h_range[0])
+
+    grid_info = {'grid_array': grid_array[:, :],
+                 'predict_shape': predict_shape,
+                 'crop_shape': crop_shape,
+                 'cube_name': cube_name,
+                 'range': [ilines_range, xlines_range, h_range],
+                 'offsets': offsets}
+    return grid_info
+
+def compute_next_points(points, prediction, crop_shape, strides_candidates, width):
+    """ Compute next point for extension procedure.
+    """
+    compared_slices_ = []
+    compared_slices_.append(np.sum(prediction[:width, crop_shape[1] - width:]))
+    compared_slices_.append(np.sum(prediction[crop_shape[2] - width:, crop_shape[1] - width:]))
+    compared_slices_.append(np.sum(prediction[crop_shape[2] // 2 - width // 2:crop_shape[2] // 2 + width // 2,
+                                              crop_shape[1] - width:]))
+    compared_slices_.append(np.sum(prediction[:width ** 2 // crop_shape[1], :]))
+    compared_slices_.append(np.sum(prediction[crop_shape[2] - width ** 2 // crop_shape[1]:, :]))
+    stride = strides_candidates[np.argmax(np.array(compared_slices_))]
+    points = [sum(x) for x in zip(points, stride)]
+    return points, compared_slices_

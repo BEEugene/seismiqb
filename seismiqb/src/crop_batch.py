@@ -129,10 +129,26 @@ class SeismicCropBatch(Batch):
     def get_pos(self, data, component, index):
         """ Get correct slice/key of a component-item based on its type.
         """
-        if component in ('geometries', 'labels', 'segyfiles'):
+        candidates = self.components + ('segyfiles', )
+        if component in candidates and component != 'slices':
             return self.unsalt(index)
         return super().get_pos(data, component, index)
 
+    def __setattr__(self, name, value):
+        if self.components is not None:
+            if name == "_data":
+                super().__setattr__(name, value)
+                if self._item_class is None:
+                    self.make_item_class()
+                self._data_named = self._item_class(data=self._data)   # pylint: disable=not-callable
+                return
+            if name in self.components:    # pylint: disable=unsupported-membership-test
+                if self._data_named is None:
+                    _ = self.data
+                setattr(self._data_named, name, value)
+                super().__setattr__('_data', self._data_named.data)
+                return
+        super().__setattr__(name, value)
 
     @action
     def load_component(self, src, dst):
@@ -186,6 +202,7 @@ class SeismicCropBatch(Batch):
         SeismicCropBatch
             Batch with positions of crops in specified component.
         """
+#         print('hey')
         new_index = [self.salt(ix) for ix in points[:, 0]]
         new_dict = {ix: self.index.get_fullpath(self.unsalt(ix))
                     for ix in new_index}
@@ -197,6 +214,8 @@ class SeismicCropBatch(Batch):
 
         for component in passdown:
             if hasattr(self, component):
+                if not component in new_batch.components:
+                    new_batch.add_components(component)
                 setattr(new_batch, component, getattr(self, component))
 
         dilations = dilations or [1, 1, 1]
@@ -398,7 +417,7 @@ class SeismicCropBatch(Batch):
 
     @action
     @inbatch_parallel(init='_init_component', target='threads')
-    def create_masks(self, ix, dst, src='slices', mode='horizon', width=3, src_labels='labels', single_horizon=False):
+    def create_masks(self, ix, dst, src='slices', mode='horizon', width=3, src_labels='labels', n_horizons=-1):
         """ Create masks from labels-dictionary in given positions.
 
         Parameters
@@ -416,7 +435,11 @@ class SeismicCropBatch(Batch):
             1 to number_of_horizons + 1.
         width : int
             Width of horizons in the `horizon` mode.
-
+        src_labels : str
+            Component of batch with labels dict.
+        n_horizons : int
+            Maximum number of horizons per crop.
+            If -1, all possible horizons will be added.
         Returns
         -------
         SeismicCropBatch
@@ -432,7 +455,7 @@ class SeismicCropBatch(Batch):
         slice_ = self.get(ix, src)
         ilines_, xlines_, hs_ = slice_[0], slice_[1], slice_[2]
         mask = create_mask(ilines_, xlines_, hs_, il_xl_h,
-                           geom.ilines_offset, geom.xlines_offset, geom.depth, mode, width, single_horizon)
+                           geom.ilines_offset, geom.xlines_offset, geom.depth, mode, width, n_horizons)
 
         pos = self.get_pos(None, dst, ix)
         getattr(self, dst)[pos] = mask
@@ -490,7 +513,7 @@ class SeismicCropBatch(Batch):
 
     @action
     @inbatch_parallel(init='_init_component', target='threads')
-    def filter_out(self, ix, src=None, dst=None, mode=None, expr=None, low=None, high=None):
+    def filter_out(self, ix, src=None, dst=None, mode=None, expr=None, low=None, high=None, length=None):
         """ Cut mask for horizont extension task.
 
         Parameters
@@ -541,15 +564,15 @@ class SeismicCropBatch(Batch):
                 cond &= np.greater_equal(expr(coords), low)
             if high is not None:
                 cond &= np.less_equal(expr(coords), high)
+            if length is not None:
+                cond &= np.less_equal(expr(coords), low + length)
             coords *= np.reshape(mask.shape, newshape=(1, 3))
             coords = np.round(coords).astype(np.int32)[cond]
             new_mask[coords[:, 0], coords[:, 1], coords[:, 2]] = mask[coords[:, 0], coords[:, 1], coords[:, 2]]
             mask = new_mask
-
         pos = self.get_pos(None, dst, ix)
         getattr(self, dst)[pos] = mask
         return self
-
 
     @action
     @inbatch_parallel(init='indices', target='threads')
@@ -907,6 +930,7 @@ class SeismicCropBatch(Batch):
             If 'phase', compute instantaneous phase.
             If 'freq', compute instantaneous frequency.
         """
+        print('hey 3')
         analytic = hilbert(crop, axis=axis)
         phase = np.unwrap(np.angle(analytic))
 

@@ -164,6 +164,7 @@ def plot_slide(dataset, *components, idx=0, iline=0, overlap=True, **kwargs):
     return batch
 
 
+<<<<<<< HEAD
 def plot_from_above(img, title, **kwargs):
     """ Plot image with a given title with predifined axis labels."""
     default_kwargs = dict(cmap='Paired')
@@ -190,6 +191,10 @@ def plot_from_above_rgb(img, title, **kwargs):
 
 def show_labels(dataset, idx=0, hor_idx=None):
     """ Show labeled ilines/xlines for a horizon from above: yellow stands for labeled regions.
+=======
+def show_labels(dataset, idx=0, hor_idx=None, src='labels'):
+    """ Show labeled ilines/xlines from above: yellow stands for labeled regions.
+>>>>>>> extension
 
     Parameters
     ----------
@@ -201,7 +206,8 @@ def show_labels(dataset, idx=0, hor_idx=None):
     """
     name = dataset.indices[idx]
     geom = dataset.geometries[name]
-    labels = dataset.labels[name]
+    labels = getattr(dataset, src)[name]
+    print('len ', len(labels))
     possible_coordinates = [[il, xl] for il in geom.ilines for xl in geom.xlines]
 
     background = np.zeros((geom.ilines_len, geom.xlines_len))
@@ -215,6 +221,7 @@ def show_labels(dataset, idx=0, hor_idx=None):
     plt.xlabel('XLINES', fontdict={'fontsize': 20})
     plt.ylabel('ILINES', fontdict={'fontsize': 20})
     plt.show()
+    return img
 
 @njit
 def labels_matrix(background, possible_coordinates, labels,
@@ -298,6 +305,7 @@ def plot_stratum_predictions(cubes, targets, predictions, n_rows=None):
         axes[i, 1].set_title('True mask')
         axes[i, 2].set_title('Predicted mask')
 
+<<<<<<< HEAD
 def show_extension_results(batch, val_pipeline, cubes_numbers, ext_result='ext_result',
                            baseline_result=None, figsize=(25, 10)):
     """ Demonstrate the results of the Horizon Extension model
@@ -352,3 +360,54 @@ def show_extension_results(batch, val_pipeline, cubes_numbers, ext_result='ext_r
         plt.imshow(predicted_img, cmap="Blues", alpha=0.1)
         plt.title('Extension prediction', fontsize=20)
         plt.show()
+=======
+def plot_extension_history(next_predict_pipeline, btch):
+    """ Function to show single extension step. """
+    fig = plt.figure(figsize=(15, 10))
+    fig.add_subplot(1, 5, 1)
+    plt.imshow(btch.images[0][..., 0].T)
+    height, width = btch.images[0].shape[:2]
+    # Major ticks
+    ax = plt.gca()
+    ax.set_xticks(np.arange(0, height, 10))
+    ax.set_yticks(np.arange(0, width, 10))
+    ax.grid(color='w', linestyle='-', linewidth=.5)
+
+    fig.add_subplot(1, 5, 2)
+    plt.imshow(btch.masks[0][:, :, 0, 0].T)
+    plt.title('true mask')
+    # Major ticks
+    ax = plt.gca()
+    ax.set_xticks(np.arange(0, height, 10))
+    ax.set_yticks(np.arange(0, width, 10))
+    ax.grid(color='w', linestyle='-', linewidth=.5)
+
+    fig.add_subplot(1, 5, 3)
+    plt.imshow(btch.cut_masks[0][..., 0].T)
+    plt.title('Created mask using predictions')
+    # Major ticks
+    ax = plt.gca()
+    ax.set_xticks(np.arange(0, height, 10))
+    ax.set_yticks(np.arange(0, width, 10))
+    ax.grid(color='w', linestyle='-', linewidth=.5)
+
+    fig.add_subplot(1, 5, 4)
+    plt.imshow(next_predict_pipeline.get_variable('result_preds')[0][:, :, 0, 0].T)
+    plt.title('predictions')
+    # Major ticks
+    ax = plt.gca()
+    ax.set_xticks(np.arange(0, height, 10))
+    ax.set_yticks(np.arange(0, width, 10))
+    ax.grid(color='w', linestyle='-', linewidth=.5)
+
+    fig.add_subplot(1, 5, 5)
+    plt.imshow(btch.cut_masks[0][..., 0].T + next_predict_pipeline.get_variable('result_preds')[0][:, :, 0, 0].T)
+    plt.title('overlap')
+
+    # Major ticks
+    ax = plt.gca()
+    ax.set_xticks(np.arange(0, height, 10))
+    ax.set_yticks(np.arange(0, width, 10))
+    ax.grid(color='w', linestyle='-', linewidth=.5)
+    plt.show()
+>>>>>>> extension
