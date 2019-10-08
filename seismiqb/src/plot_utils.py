@@ -164,7 +164,6 @@ def plot_slide(dataset, *components, idx=0, iline=0, overlap=True, **kwargs):
     return batch
 
 
-<<<<<<< HEAD
 def plot_from_above(img, title, **kwargs):
     """ Plot image with a given title with predifined axis labels."""
     default_kwargs = dict(cmap='Paired')
@@ -189,12 +188,8 @@ def plot_from_above_rgb(img, title, **kwargs):
     plt.show()
 
 
-def show_labels(dataset, idx=0, hor_idx=None):
-    """ Show labeled ilines/xlines for a horizon from above: yellow stands for labeled regions.
-=======
 def show_labels(dataset, idx=0, hor_idx=None, src='labels'):
     """ Show labeled ilines/xlines from above: yellow stands for labeled regions.
->>>>>>> extension
 
     Parameters
     ----------
@@ -305,7 +300,7 @@ def plot_stratum_predictions(cubes, targets, predictions, n_rows=None):
         axes[i, 1].set_title('True mask')
         axes[i, 2].set_title('Predicted mask')
 
-<<<<<<< HEAD
+
 def show_extension_results(batch, val_pipeline, cubes_numbers, ext_result='ext_result',
                            baseline_result=None, figsize=(25, 10)):
     """ Demonstrate the results of the Horizon Extension model
@@ -360,7 +355,8 @@ def show_extension_results(batch, val_pipeline, cubes_numbers, ext_result='ext_r
         plt.imshow(predicted_img, cmap="Blues", alpha=0.1)
         plt.title('Extension prediction', fontsize=20)
         plt.show()
-=======
+
+
 def plot_extension_history(next_predict_pipeline, btch):
     """ Function to show single extension step. """
     fig = plt.figure(figsize=(15, 10))
@@ -410,4 +406,3 @@ def plot_extension_history(next_predict_pipeline, btch):
     ax.set_yticks(np.arange(0, width, 10))
     ax.grid(color='w', linestyle='-', linewidth=.5)
     plt.show()
->>>>>>> extension
